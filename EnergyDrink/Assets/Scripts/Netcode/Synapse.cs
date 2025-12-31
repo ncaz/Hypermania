@@ -8,7 +8,7 @@ public class Synapse
     private string _url;
     public Synapse(string url, int port)
     {
-        _url = $"https://{url}:{port}";
+        _url = $"http://{url}:{port}";
     }
 
     [Serializable] private class CreateRoomReq { public string client_id; }
@@ -52,7 +52,8 @@ public class Synapse
         var body = JsonUtility.ToJson(new LeaveRoomReq { client_id = clientId });
 
         yield return SendHttp(url, body, text =>
-        {   var resp = JsonUtility.FromJson<LeaveRoomResp>(text);
+        {
+            var resp = JsonUtility.FromJson<LeaveRoomResp>(text);
             Debug.Log($"[HTTP] Left room {resp}");
             onSuccess(resp);
         });
