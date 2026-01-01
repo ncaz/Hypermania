@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using MemoryPack;
 using UnityEngine;
@@ -13,13 +14,9 @@ namespace Netcode.Rollback.Network
         public Frame Frame;
         public byte[] Bytes;
 
-        public static InputBytes Zeroed<TInput>(int numPlayers)
+        public static InputBytes Zeroed<TInput>(int numPlayers) where TInput : IInput<TInput>
         {
-            TInput sample = default;
-            ArrayBufferWriter<byte> writer = new ArrayBufferWriter<byte>();
-            MemoryPackSerializer.Serialize(writer, sample);
-            int size = writer.WrittenSpan.Length * numPlayers;
-
+            int size = Serializer<TInput>.Size() * numPlayers;
             return new InputBytes
             {
                 Frame = Frame.NullFrame,
@@ -28,27 +25,26 @@ namespace Netcode.Rollback.Network
         }
 
         public static InputBytes FromInputs<TInput>(
-            int numPlayers,
             Dictionary<PlayerHandle, PlayerInput<TInput>> inputs)
             where TInput : IInput<TInput>
         {
-            ArrayBufferWriter<byte> writer = new ArrayBufferWriter<byte>();
             Frame frame = Frame.NullFrame;
+            int size = Serializer<TInput>.Size() * inputs.Count;
+            byte[] buf = new byte[size];
 
-            for (int i = 0; i < numPlayers; i++)
+            int ptr = 0;
+                foreach((PlayerHandle handle, PlayerInput<TInput> input) in inputs) 
             {
-                PlayerHandle handle = new PlayerHandle(i);
-                TInput toWrite = default;
                 if (inputs.TryGetValue(handle, out PlayerInput<TInput> pi))
                 {
                     Assert.IsTrue(frame == Frame.NullFrame || pi.Frame == Frame.NullFrame || frame == pi.Frame);
                     if (pi.Frame != Frame.NullFrame) frame = pi.Frame;
-                    toWrite = pi.Input;
+                    Serializer<TInput>.Serialize(pi.Input, buf.AsSpan().Slice(ptr, Serializer<TInput>.Size()));
+                    ptr += Serializer<TInput>.Size();
                 }
-                MemoryPackSerializer.Serialize(writer, toWrite);
             }
 
-            return new InputBytes { Frame = frame, Bytes = writer.WrittenSpan.ToArray() };
+            return new InputBytes { Frame = frame, Bytes = buf };
         }
 
 
@@ -95,6 +91,7 @@ namespace Netcode.Rollback.Network
 
         // configuration / collections
         private int _numPlayers;
+        private int _localPlayers;
         private PlayerHandle[] _handles;
         private Deque<Message> _sendQueue;
         private Deque<Event<TInput>> _eventQueue;
@@ -176,6 +173,7 @@ namespace Netcode.Rollback.Network
             };
 
             _numPlayers = numPlayers;
+            _localPlayers = localPlayers;
             Array.Sort(_handles);
             _sendQueue = new Deque<Message>();
             _eventQueue = new Deque<Event<TInput>>();
@@ -337,14 +335,15 @@ namespace Netcode.Rollback.Network
 
             if (_sendQueue.Count == 0) { return; }
 
-            Debug.Log($"Sending {_sendQueue.Count} messages over socket");
+            // Debug.Log($"Sending {_sendQueue.Count} messages over socket");
             while (_sendQueue.Count > 0) { socket.SendTo(_sendQueue.PopFront(), _peerAddr); }
         }
 
         public void SendInput(Dictionary<PlayerHandle, PlayerInput<TInput>> inputs, ConnectionStatus[] connectStatus)
         {
             if (!IsRunning) { return; }
-            InputBytes endpointData = InputBytes.FromInputs(_numPlayers, inputs);
+            Assert.IsTrue(inputs.Count == _localPlayers);
+            InputBytes endpointData = InputBytes.FromInputs(inputs);
             _timeSyncLayer.AdvanceFrame(endpointData.Frame, _localFrameAdvantage, _remoteFrameAdvantage);
             _pendingOutput.PushBack(endpointData);
 
@@ -369,7 +368,7 @@ namespace Netcode.Rollback.Network
 
             int totalBytes = 0;
             foreach (InputBytes bytes in _pendingOutput.Iter()) { totalBytes += bytes.Bytes.Length; }
-            Debug.Log($"Encoded {totalBytes} bytes from {_pendingOutput.Count} pending outputs(s) into {body.Bytes.Length} bytes");
+            // Debug.Log($"Encoded {totalBytes} bytes from {_pendingOutput.Count} pending outputs(s) into {body.Bytes.Length} bytes");
 
             body.AckFrame = _lastRecvFrame;
             body.DisconnectRequested = _state == ProtocolState.Disconnected;
@@ -394,8 +393,9 @@ namespace Netcode.Rollback.Network
 
         private void SendSyncRequest()
         {
-            uint randomNumber = (uint)random.Next() << 1
-             | (uint)random.Next(2);
+            Span<byte> nmbBytes = stackalloc byte[4];
+            random.NextBytes(nmbBytes);
+            uint randomNumber = BinaryPrimitives.ReadUInt32BigEndian(nmbBytes);
             _syncRandomRequests.Add(randomNumber);
             MessageBody.SyncRequest body = new MessageBody.SyncRequest { RandomRequest = randomNumber };
             QueueMessage(MessageBody.From(body));

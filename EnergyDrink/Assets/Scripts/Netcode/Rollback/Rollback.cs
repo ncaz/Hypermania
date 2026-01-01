@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using MemoryPack;
 using Netcode.Rollback.Network;
 
 namespace Netcode.Rollback
 {
-    public struct Frame : IComparable<Frame>, IEquatable<Frame>
+    [MemoryPackable]
+    public partial struct Frame : IComparable<Frame>, IEquatable<Frame>, IFormattable
     {
         public int No;
         public static readonly Frame NullFrame = new Frame { No = -1 };
@@ -46,6 +49,9 @@ namespace Netcode.Rollback
 
         public static Frame Max(Frame a, Frame b) => a.No < b.No ? b : a;
         public static Frame Min(Frame a, Frame b) => a.No > b.No ? b : a;
+        public override string ToString() => No.ToString();
+
+        public string ToString(string format, IFormatProvider formatProvider) => No.ToString(format, formatProvider);
     }
 
 
@@ -73,7 +79,7 @@ namespace Netcode.Rollback
         Spectator,
     }
 
-    public struct PlayerType<TAddress> 
+    public struct PlayerType<TAddress>
     {
         public PlayerKind Kind;
         public TAddress Address;
@@ -251,9 +257,24 @@ namespace Netcode.Rollback
             Kind == RollbackRequestKind.AdvanceFrameReq ? _advanceFrameReq : throw new InvalidOperationException("body type mismatch");
     }
 
-    public interface IInput<TSelf> : IEquatable<TSelf> { }
+    public interface IInput<TSelf> : IEquatable<TSelf>, ISerializable<TSelf> { }
     public interface IState<TSelf> { }
     public interface IAddress<TSelf> { }
+
+    public interface ISerializable<TSelf>
+    {
+        public abstract int Size();
+        public abstract void Serialize(Span<byte> outBytes);
+        public abstract TSelf Deserialize(ReadOnlySpan<byte> inBytes);
+    }
+
+    public static class Serializer<T> where T : ISerializable<T>
+    {
+        private static T _sample = default;
+        public static int Size() { return _sample.Size(); }
+        public static void Serialize(in T value, Span<byte> outBytes) { value.Serialize(outBytes); }
+        public static T Deserialize(ReadOnlySpan<byte> inBytes) { return _sample.Deserialize(inBytes); }
+    }
 
     public interface INonBlockingSocket<TAddress>
     {

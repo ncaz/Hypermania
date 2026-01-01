@@ -1,5 +1,4 @@
 using UnityEngine;
-using MemoryPack;
 
 public enum FighterState
 {
@@ -13,8 +12,7 @@ public enum FighterState
     Grabbing
 }
 
-[MemoryPackable]
-public partial struct FighterInfo
+public struct FighterInfo
 {
     public Vector2 Position;
     public Vector2 Velocity;

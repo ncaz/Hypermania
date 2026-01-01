@@ -3,8 +3,8 @@ using MemoryPack;
 
 namespace Netcode.Rollback.Network
 {
-    [Serializable]
-    public struct ConnectionStatus
+    [MemoryPackable]
+    public partial struct ConnectionStatus
     {
         public bool Disconnected;
         public Frame LastFrame;
@@ -16,7 +16,6 @@ namespace Netcode.Rollback.Network
         };
     }
 
-    [Serializable]
     public enum MessageKind : byte
     {
         SyncRequest,
@@ -29,8 +28,8 @@ namespace Netcode.Rollback.Network
         KeepAlive,
     }
 
-    [Serializable]
-    public struct MessageHeader
+    [MemoryPackable]
+    public partial struct MessageHeader
     {
         public ushort Magic;
     }
@@ -38,20 +37,20 @@ namespace Netcode.Rollback.Network
     [MemoryPackable]
     public partial struct MessageBody
     {
-        [Serializable]
-        public struct SyncRequest
+        [MemoryPackable]
+        public partial struct SyncRequest
         {
             public uint RandomRequest;
         }
 
-        [Serializable]
-        public struct SyncReply
+        [MemoryPackable]
+        public partial struct SyncReply
         {
             public uint RandomReply;
         }
 
-        [Serializable]
-        public struct Input
+        [MemoryPackable]
+        public partial struct Input
         {
             public ConnectionStatus[] PeerConnectStatus;
             public bool DisconnectRequested;
@@ -69,8 +68,8 @@ namespace Netcode.Rollback.Network
             };
         }
 
-        [Serializable]
-        public struct InputAck
+        [MemoryPackable]
+        public partial struct InputAck
         {
             public Frame AckFrame;
 
@@ -80,37 +79,44 @@ namespace Netcode.Rollback.Network
             };
         }
 
-        [Serializable]
-        public struct QualityReport
+        [MemoryPackable]
+        public partial struct QualityReport
         {
             public short FrameAdvantage;
             public ulong Ping;
         }
 
-        [Serializable]
-        public struct QualityReply
+        [MemoryPackable]
+        public partial struct QualityReply
         {
             public ulong Pong;
         }
 
-        [Serializable]
-        public struct ChecksumReport
+        [MemoryPackable]
+        public partial struct ChecksumReport
         {
             public ulong Checksum;
             public Frame Frame;
         }
 
-        [Serializable]
-        public struct KeepAlive {}
+        [MemoryPackable]
+        public partial struct KeepAlive { }
 
         public MessageKind Kind;
 
+        [MemoryPackInclude]
         private SyncRequest _syncRequest;
+        [MemoryPackInclude]
         private SyncReply _syncReply;
+        [MemoryPackInclude]
         private Input _input;
+        [MemoryPackInclude]
         private InputAck _inputAck;
+        [MemoryPackInclude]
         private QualityReport _qualityReport;
+        [MemoryPackInclude]
         private QualityReply _qualityReply;
+        [MemoryPackInclude]
         private ChecksumReport _checksumReport;
 
         public static MessageBody From(in SyncRequest body) =>

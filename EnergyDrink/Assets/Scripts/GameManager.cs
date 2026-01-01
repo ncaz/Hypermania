@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
-using Netcode.Puncher;
+using Netcode.P2P;
 using Netcode.Rollback;
 using Netcode.Rollback.Sessions;
 using UnityEngine;
@@ -70,7 +70,7 @@ public class GameManager : MonoBehaviour
             switch (ev.Kind)
             {
                 case WsEventKind.JoinedRoom:
-                    _roomId = null;
+                    _roomId = ev.RoomId;
                     Debug.Log($"Joined room {ev.RoomId}");
                     break;
                 case WsEventKind.PeerLeft:
@@ -112,9 +112,11 @@ public class GameManager : MonoBehaviour
 
     public async void StartGame()
     {
+        Debug.Log($"handle: {_handle}, opponentHandle: {_opponentHandle}, roomId: {_roomId}");
         if (_handle == null || _opponentHandle == null || _roomId == null) return;
 
         EndPoint ep = await _synapse.ConnectAsync();
+        Debug.Log($"using remote ep {ep}");
         _curState = GameState.New();
         SessionBuilder<Input, EndPoint> builder = new SessionBuilder<Input, EndPoint>().WithNumPlayers(2).WithFps(50);
         builder.AddPlayer(new PlayerType<EndPoint> { Kind = PlayerKind.Local, Address = null }, new PlayerHandle(_handle.Value));
@@ -149,13 +151,15 @@ public class GameManager : MonoBehaviour
 
         foreach (RollbackEvent<Input, EndPoint> ev in _session.DrainEvents())
         {
-            Debug.Log($"Event: {ev}");
+            // Debug.Log($"Event: {ev}");
         }
 
         if (_session.CurrentState == SessionState.Running)
         {
-            _session.AddLocalInput(new PlayerHandle(0), new Input(inputs[0]));
-            _session.AddLocalInput(new PlayerHandle(1), new Input(inputs[1]));
+            if (_handle == 0)
+                _session.AddLocalInput(new PlayerHandle(0), new Input(inputs[0]));
+            if (_handle == 1)
+                _session.AddLocalInput(new PlayerHandle(1), new Input(inputs[1]));
 
             try
             {
@@ -188,7 +192,9 @@ public class GameManager : MonoBehaviour
 
     void Render()
     {
-        _bob1.transform.position = _curState.F1Info.Position;
-        _bob2.transform.position = _curState.F2Info.Position;
+        if (_bob1 != null)
+            _bob1.transform.position = _curState.F1Info.Position;
+        if (_bob2 != null)
+            _bob2.transform.position = _curState.F2Info.Position;
     }
 }

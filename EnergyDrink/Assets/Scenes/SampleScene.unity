@@ -289,8 +289,6 @@ MonoBehaviour:
   HttpPort: 9000
   PunchPort: 9001
   RelayPort: 9002
-  PlayerId: 0
-  OpponentId: 1
   _bob1: {fileID: 1329067101}
   _bob2: {fileID: 1229177550}
 --- !u!4 &556815173

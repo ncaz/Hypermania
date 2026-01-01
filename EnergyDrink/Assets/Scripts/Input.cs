@@ -1,12 +1,29 @@
 using System;
+using System.Buffers.Binary;
 using Netcode.Rollback;
-using MemoryPack;
 
-[MemoryPackable]
-public partial struct Input : IInput<Input>
+public struct Input : IInput<Input>
 {
     public InputFlags Flags;
-    public bool Equals(Input other) { return Flags == other.Flags; }
+    public readonly bool Equals(Input other) { return Flags == other.Flags; }
+
+    public int Size() { return sizeof(int); }
+
+    public void Serialize(Span<byte> outBytes)
+    {
+        if (outBytes.Length < Size())
+            throw new ArgumentException("Output buffer too small", nameof(outBytes));
+        BinaryPrimitives.WriteInt32LittleEndian(outBytes, (int)Flags);
+    }
+
+    public Input Deserialize(ReadOnlySpan<byte> inBytes)
+    {
+        if (inBytes.Length < Size())
+            throw new ArgumentException("Input buffer too small", nameof(inBytes));
+        int value = BinaryPrimitives.ReadInt32LittleEndian(inBytes);
+        return new Input((InputFlags)value);
+    }
+
     public Input(InputFlags flags) { Flags = flags; }
 }
 
@@ -14,7 +31,7 @@ public partial struct Input : IInput<Input>
 // For example, if the user presses left and up, we would set the Input = Input.Left | Input.Up, which sets the bits accordingly.
 // To check if the user has pressed down, we can use userInput.HasFlag(Input.Down).
 [Flags]
-public enum InputFlags
+public enum InputFlags : int
 {
     None = 0,
     Up = 1 << 1,

@@ -24,7 +24,7 @@ namespace Netcode.Rollback.Network
             int ptr = 0;
             foreach (InputBytes input in pendingInput)
             {
-                Assert.AreEqual(refInput.Bytes.Length, input.Bytes.Length, "input must be same length as the reference input");
+                Assert.AreEqual(refInput.Bytes.Length, input.Bytes.Length, $"input ({input.Bytes.Length} bytes) must be same length as the reference input ({refInput.Bytes.Length} bytes)");
                 for (int i = 0; i < refInput.Bytes.Length; i++)
                 {
                     bytes[ptr++] = (byte)(refInput.Bytes[i] ^ input.Bytes[i]);

@@ -11,7 +11,7 @@ using Netcode.Rollback;
 using Netcode.Rollback.Network;
 using UnityEngine;
 
-namespace Netcode.Puncher
+namespace Netcode.P2P
 {
     public enum ClientState
     {
@@ -28,10 +28,10 @@ namespace Netcode.Puncher
 
     public enum WsEventKind
     {
-        JoinedRoom,
-        YouAre,
-        PeerJoined,
-        PeerLeft,
+        JoinedRoom = 1,
+        YouAre = 2,
+        PeerJoined = 3,
+        PeerLeft = 4,
     }
 
     public readonly struct WsEvent
@@ -55,11 +55,6 @@ namespace Netcode.Puncher
 
     public sealed class SynapseClient : IDisposable, INonBlockingSocket<EndPoint>
     {
-        private const byte WS_JOINED_ROOM = 1;
-        private const byte WS_YOU_ARE = 2;
-        private const byte WS_PEER_JOINED = 3;
-        private const byte WS_PEER_LEFT = 4;
-
         private const byte UDP_FOUND_PEER = 0x1;
         private const byte UDP_WAITING = 0x2;
 
@@ -78,6 +73,8 @@ namespace Netcode.Puncher
         // matchmaking websocket
         private ClientWebSocket _ws;
         private CancellationTokenSource _wsCts;
+        private Task<WebSocketReceiveResult> _wsRecvTask;
+        private int _wsRecvCount;
 
         // pump buffers/state
         private readonly byte[] _wsBuf = new byte[2048];
@@ -188,40 +185,39 @@ namespace Netcode.Puncher
             if (ws.State != WebSocketState.Open && ws.State != WebSocketState.CloseReceived)
                 return events;
 
-            // Drain all messages that are already completed "now".
-            while (true)
+            // Ensure there is an in-flight receive
+            if (_wsRecvTask == null)
             {
-                if (_wsCts == null) break;
-                if (ws.State != WebSocketState.Open && ws.State != WebSocketState.CloseReceived) break;
-
-                Task<WebSocketReceiveResult> recvTask =
-                    ws.ReceiveAsync(new ArraySegment<byte>(_wsBuf), _wsCts.Token);
-
-                // If it didn't complete immediately, stop; we'll get it next frame.
-                if (!recvTask.IsCompleted)
-                    break;
-
-                if (recvTask.IsCanceled || recvTask.IsFaulted)
-                    break;
-
-                WebSocketReceiveResult res = recvTask.Result;
-
-                if (res.MessageType == WebSocketMessageType.Close)
-                    break;
-
-                if (res.MessageType != WebSocketMessageType.Binary)
-                    continue;
-
-                if (!res.EndOfMessage)
-                    throw new InvalidOperationException("WS message fragmented; implement reassembly.");
-
-                if (TryHandleWsBinaryToEvents(_wsBuf, res.Count, events))
-                {
-                    // handled
-                }
+                if (_wsCts == null) return events;
+                _wsRecvTask = ws.ReceiveAsync(new ArraySegment<byte>(_wsBuf), _wsCts.Token);
             }
+
+            // If it’s not done yet, nothing to pump this frame
+            if (!_wsRecvTask.IsCompleted)
+                return events;
+
+            if (_wsRecvTask.IsCanceled || _wsRecvTask.IsFaulted)
+            {
+                _wsRecvTask = null;
+                return events;
+            }
+
+            WebSocketReceiveResult res = _wsRecvTask.Result;
+            _wsRecvTask = null;
+
+            if (res.MessageType == WebSocketMessageType.Close)
+                return events;
+
+            if (res.MessageType != WebSocketMessageType.Binary)
+                return events;
+
+            if (!res.EndOfMessage)
+                throw new InvalidOperationException("WS message fragmented; implement reassembly.");
+
+            TryHandleWsBinaryToEvents(_wsBuf, res.Count, events);
             return events;
         }
+
 
         private bool TryHandleWsBinaryToEvents(byte[] data, int n, List<WsEvent> outEvents)
         {
@@ -230,7 +226,7 @@ namespace Netcode.Puncher
             byte tag = data[0];
             switch (tag)
             {
-                case WS_JOINED_ROOM:
+                case (int)WsEventKind.JoinedRoom:
                     {
                         if (n < 1 + 8) return false;
                         ulong room = ReadU64BE(data, 1);
@@ -240,7 +236,7 @@ namespace Netcode.Puncher
                         outEvents.Add(WsEvent.JoinedRoom(room));
                         return true;
                     }
-                case WS_YOU_ARE:
+                case (int)WsEventKind.YouAre:
                     {
                         if (n < 1 + 4) return false;
                         uint handle = ReadU32BE(data, 1);
@@ -248,7 +244,7 @@ namespace Netcode.Puncher
                         outEvents.Add(WsEvent.YouAre(handle));
                         return true;
                     }
-                case WS_PEER_JOINED:
+                case (int)WsEventKind.PeerJoined:
                     {
                         if (n < 1 + 4) return false;
                         uint h = ReadU32BE(data, 1);
@@ -259,7 +255,7 @@ namespace Netcode.Puncher
                         outEvents.Add(WsEvent.PeerJoined(h));
                         return true;
                     }
-                case WS_PEER_LEFT:
+                case (int)WsEventKind.PeerLeft:
                     {
                         if (n < 1 + 4) return false;
                         uint h = ReadU32BE(data, 1);
