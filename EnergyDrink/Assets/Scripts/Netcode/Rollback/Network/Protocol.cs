@@ -335,7 +335,7 @@ namespace Netcode.Rollback.Network
 
             if (_sendQueue.Count == 0) { return; }
 
-            // Debug.Log($"Sending {_sendQueue.Count} messages over socket");
+            Debug.Log($"Sending {_sendQueue.Count} messages over socket");
             while (_sendQueue.Count > 0) { socket.SendTo(_sendQueue.PopFront(), _peerAddr); }
         }
 
@@ -442,6 +442,7 @@ namespace Netcode.Rollback.Network
                 _eventQueue.PushBack(Event<TInput>.From(new Event<TInput>.NetworkResumed { }));
             }
 
+            Debug.Log($"handling message of kind {msg.Body.Kind}");
             switch (msg.Body.Kind)
             {
                 case MessageKind.SyncRequest:

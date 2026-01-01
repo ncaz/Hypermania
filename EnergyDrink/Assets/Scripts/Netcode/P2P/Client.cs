@@ -58,6 +58,9 @@ namespace Netcode.P2P
         private const byte UDP_FOUND_PEER = 0x1;
         private const byte UDP_WAITING = 0x2;
 
+        private const byte UDP_BIND = 0x1;
+        private const byte UDP_RELAY = 0x3;
+
         public const int RECV_BUFFER_SIZE = 4096;
         public const int IDEAL_MAX_UDP_PACKET_SIZE = 508;
 
@@ -67,7 +70,6 @@ namespace Netcode.P2P
 
         // server configuration
         private readonly Uri _baseHttpWs;
-        private readonly IPEndPoint _punchEp;
         private readonly IPEndPoint _relayEp;
 
         // matchmaking websocket
@@ -88,10 +90,9 @@ namespace Netcode.P2P
         // rollback recv buffer
         private readonly byte[] _buffer;
 
-        public SynapseClient(string host, int httpPort = 9000, int punchPort = 9001, int relayPort = 9002)
+        public SynapseClient(string host, int httpPort = 9000, int relayPort = 9001)
         {
             _baseHttpWs = new Uri($"ws://{host}:{httpPort}");
-            _punchEp = new IPEndPoint(DnsSafeResolve(host), punchPort);
             _relayEp = new IPEndPoint(DnsSafeResolve(host), relayPort);
 
             _buffer = new byte[RECV_BUFFER_SIZE];
@@ -185,14 +186,12 @@ namespace Netcode.P2P
             if (ws.State != WebSocketState.Open && ws.State != WebSocketState.CloseReceived)
                 return events;
 
-            // Ensure there is an in-flight receive
             if (_wsRecvTask == null)
             {
                 if (_wsCts == null) return events;
                 _wsRecvTask = ws.ReceiveAsync(new ArraySegment<byte>(_wsBuf), _wsCts.Token);
             }
 
-            // If it’s not done yet, nothing to pump this frame
             if (!_wsRecvTask.IsCompleted)
                 return events;
 
@@ -218,7 +217,6 @@ namespace Netcode.P2P
             return events;
         }
 
-
         private bool TryHandleWsBinaryToEvents(byte[] data, int n, List<WsEvent> outEvents)
         {
             if (n < 1) return false;
@@ -227,45 +225,42 @@ namespace Netcode.P2P
             switch (tag)
             {
                 case (int)WsEventKind.JoinedRoom:
+                    if (n < 1 + 8) return false;
                     {
-                        if (n < 1 + 8) return false;
                         ulong room = ReadU64BE(data, 1);
-
                         State = ClientState.Matchmaking;
-
                         outEvents.Add(WsEvent.JoinedRoom(room));
                         return true;
                     }
-                case (int)WsEventKind.YouAre:
-                    {
-                        if (n < 1 + 4) return false;
-                        uint handle = ReadU32BE(data, 1);
 
+                case (int)WsEventKind.YouAre:
+                    if (n < 1 + 4) return false;
+                    {
+                        uint handle = ReadU32BE(data, 1);
                         outEvents.Add(WsEvent.YouAre(handle));
                         return true;
                     }
-                case (int)WsEventKind.PeerJoined:
-                    {
-                        if (n < 1 + 4) return false;
-                        uint h = ReadU32BE(data, 1);
 
+                case (int)WsEventKind.PeerJoined:
+                    if (n < 1 + 4) return false;
+                    {
+                        uint h = ReadU32BE(data, 1);
                         EnsureState(ClientState.Matchmaking);
                         State = ClientState.MatchmakingReady;
-
                         outEvents.Add(WsEvent.PeerJoined(h));
                         return true;
                     }
-                case (int)WsEventKind.PeerLeft:
-                    {
-                        if (n < 1 + 4) return false;
-                        uint h = ReadU32BE(data, 1);
 
+                case (int)WsEventKind.PeerLeft:
+                    if (n < 1 + 4) return false;
+                    {
+                        uint h = ReadU32BE(data, 1);
                         if (State == ClientState.MatchmakingReady)
                             State = ClientState.Matchmaking;
-
                         outEvents.Add(WsEvent.PeerLeft(h));
                         return true;
                     }
+
                 default:
                     return false;
             }
@@ -290,7 +285,8 @@ namespace Netcode.P2P
 
         private async Task<IPEndPoint> GetPeerEpAsync(CancellationToken ct)
         {
-            byte[] clientIdPkt = BuildClientIdPacket();
+            // New format: [BindByte][clientId(16 bytes BE)]
+            byte[] bindPkt = BuildBindPacket();
 
             const int SEND_INTERVAL_MS = 100;
             const int RECV_TIMEOUT_MS = 300;
@@ -301,7 +297,7 @@ namespace Netcode.P2P
                 if (State == ClientState.Disposed)
                     throw new ObjectDisposedException(nameof(SynapseClient));
 
-                await _udp.SendAsync(clientIdPkt, clientIdPkt.Length, _punchEp);
+                await _udp.SendAsync(bindPkt, bindPkt.Length, _relayEp);
 
                 var recvTask = _udp.ReceiveAsync();
                 var delayTask = Task.Delay(RECV_TIMEOUT_MS, ct);
@@ -315,7 +311,7 @@ namespace Netcode.P2P
 
                 UdpReceiveResult recv = recvTask.Result;
 
-                if (!EndPointMatches(recv.RemoteEndPoint, _punchEp))
+                if (!EndPointMatches(recv.RemoteEndPoint, _relayEp))
                     continue;
 
                 byte[] data = recv.Buffer;
@@ -366,12 +362,17 @@ namespace Netcode.P2P
         public void SendTo(in Message message, EndPoint addr)
         {
             byte[] payload = MemoryPackSerializer.Serialize(message);
-            if (payload.Length > IDEAL_MAX_UDP_PACKET_SIZE)
+
+            byte[] pkt = new byte[payload.Length + 1];
+            pkt[0] = UDP_RELAY;
+            Buffer.BlockCopy(payload, 0, pkt, 1, payload.Length);
+
+            if (pkt.Length > IDEAL_MAX_UDP_PACKET_SIZE)
             {
-                Debug.Log($"Sending UDP packet of size {payload.Length} bytes, which is larger than ideal ({IDEAL_MAX_UDP_PACKET_SIZE}).");
+                Debug.Log($"Sending UDP packet of size {pkt.Length} bytes, which is larger than ideal ({IDEAL_MAX_UDP_PACKET_SIZE}).");
             }
 
-            _udp.Client.SendTo(payload, SocketFlags.None, addr);
+            _udp.Client.SendTo(pkt, SocketFlags.None, addr);
         }
 
         public List<(EndPoint addr, Message message)> ReceiveAllMessages()
@@ -388,7 +389,23 @@ namespace Netcode.P2P
                     if (bytes > RECV_BUFFER_SIZE)
                         throw new InvalidOperationException("Received more bytes than buffer size.");
 
-                    Message? message = MemoryPackSerializer.Deserialize<Message>(_buffer.AsSpan().Slice(0, bytes));
+                    // Incoming relay from server is: [RelayByte][payload...]
+                    if (bytes < 2) continue;
+
+                    int offset = 0;
+                    int len = bytes;
+
+                    if (_buffer[0] == UDP_RELAY)
+                    {
+                        offset = 1;
+                        len = bytes - 1;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    Message? message = MemoryPackSerializer.Deserialize<Message>(_buffer.AsSpan().Slice(offset, len));
                     if (message != null) received.Add((remote, message.Value));
                 }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.WouldBlock)
@@ -422,7 +439,7 @@ namespace Netcode.P2P
 
         private static string GuidToU128Decimal(Guid g)
         {
-            string hex = g.ToString("N"); // 32 hex chars
+            string hex = g.ToString("N");
             byte[] be16 = new byte[16];
             for (int i = 0; i < 16; i++)
                 be16[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
@@ -435,8 +452,17 @@ namespace Netcode.P2P
             return bi.ToString();
         }
 
-        private byte[] BuildClientIdPacket()
+        private byte[] BuildClientIdBytesBE()
             => U128DecimalTo16BytesBE(ClientIdDecimal);
+
+        private byte[] BuildBindPacket()
+        {
+            byte[] id = BuildClientIdBytesBE(); // 16
+            byte[] pkt = new byte[1 + 16];
+            pkt[0] = UDP_BIND;
+            Buffer.BlockCopy(id, 0, pkt, 1, 16);
+            return pkt;
+        }
 
         private static byte[] U128DecimalTo16BytesBE(string dec)
         {

@@ -16,10 +16,9 @@ use tokio::sync::{RwLock, mpsc};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{error::ApiError, punch::udp_coordinator, relay::relay_server, utils::UdpClientState};
+use crate::{error::ApiError, relay::udp_server, utils::UdpClientState};
 
 mod error;
-mod punch;
 mod relay;
 mod utils;
 
@@ -97,8 +96,6 @@ struct Args {
     #[arg(long, default_value_t = 9000)]
     http_port: u16,
     #[arg(long, default_value_t = 9001)]
-    punch_port: u16,
-    #[arg(long, default_value_t = 9002)]
     relay_port: u16,
 }
 
@@ -188,19 +185,16 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let punch_addr = bind_addr(args.punch_port);
     let relay_addr = bind_addr(args.relay_port);
     let http_addr = bind_addr(args.http_port);
 
     tracing::info!(
-        "Starting server with tcp port {} punch port {} relay port {}",
+        "Starting server with tcp port {} relay port {}",
         args.http_port,
-        args.punch_port,
         args.relay_port
     );
 
-    tokio::spawn(udp_coordinator(punch_addr, state.clone()));
-    tokio::spawn(relay_server(relay_addr, state.clone()));
+    tokio::spawn(udp_server(relay_addr, state.clone()));
 
     let app = Router::new()
         .layer(TraceLayer::new_for_http())
