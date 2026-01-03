@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Netcode.Rollback;
 using Netcode.Rollback.Network;
 using Steamworks;
+using UnityEngine;
 
 public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSteamID>
 {
@@ -47,8 +48,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
         SteamMatchmaking.SetLobbyData(_currentLobby, "version", "1");
         SteamMatchmaking.SetLobbyData(_currentLobby, "game", "EnergyDrink");
-
-        // Store max members so joiners can compute consistent handle ordering.
         SteamMatchmaking.SetLobbyData(_currentLobby, "maxMembers", maxMembers.ToString());
 
         RefreshPeerFromLobby();
@@ -68,7 +67,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         await _lobbyEnterTcs.Task.ConfigureAwait(false);
         _currentLobby = lobbyId;
 
-        // Read max members written by host if present.
         if (int.TryParse(SteamMatchmaking.GetLobbyData(_currentLobby, "maxMembers"), out int mm) && mm > 0)
             _maxMembers = mm;
 
@@ -88,47 +86,49 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         }
 
         _peer = default;
+        _host = default;
         _startArmed = false;
         _startSentByHost = false;
+        _iAmHost = false;
         _handles.Clear();
 
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Starts the game and returns contiguous handles for each SteamID in the lobby.
-    /// Ordering rule: lobby owner gets handle 0, remaining members sorted by SteamID (ascending) get 1..N-1.
-    /// This is deterministic on all clients.
+    /// Host: creates a P2P listen socket, broadcasts "__START__", accepts inbound connection.
+    /// Peer: waits for "__START__", then connects to host (lobby owner).
     /// </summary>
     public Task<Dictionary<CSteamID, int>> StartGame()
     {
         EnsureNotDisposed();
         if (!_currentLobby.IsValid()) throw new InvalidOperationException("Not in a lobby.");
 
-        ConfigureP2P();
         RefreshPeerFromLobby();
         if (!_peer.IsValid()) throw new InvalidOperationException("No peer in lobby yet.");
 
         _startArmed = true;
         _startGameTcs = new TaskCompletionSource<Dictionary<CSteamID, int>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        bool iAmHost = SteamMatchmaking.GetLobbyOwner(_currentLobby) == Me;
+        _host = SteamMatchmaking.GetLobbyOwner(_currentLobby);
+        _iAmHost = (_host == Me);
 
-        if (iAmHost)
+        if (_iAmHost)
         {
-            // Host computes and publishes handle map so clients can validate (optional).
+            // Host publishes deterministic handles (optional) and starts listening BEFORE telling clients to connect.
             ComputeHandlesDeterministic();
             PublishHandlesToLobby();
+
+            EnsureListenSocket();
 
             SendLobbyStartMessage();
             _startSentByHost = true;
 
-            EnsureConnectionTo(_peer);
+            // Do NOT call ConnectP2P as host; peer will connect inbound and we accept in callback.
         }
         else
         {
-            // Wait for host's "__START__" in OnLobbyChatMessage, then connect.
-            // Handles will be computed deterministically upon connect (and can be verified against lobby data).
+            // Peer waits for START message in OnLobbyChatMessage then connects to _host.
         }
 
         return _startGameTcs.Task;
@@ -139,8 +139,12 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     {
         EnsureNotDisposed();
         if (!addr.IsValid()) throw new ArgumentException("Invalid addr.", nameof(addr));
+        if (_conn == HSteamNetConnection.Invalid)
+            throw new InvalidOperationException("No active connection.");
 
-        var conn = EnsureConnectionTo(addr);
+        // 1v1 only: enforce sending only to the connected peer
+        if (_peer.IsValid() && addr != _peer)
+            throw new InvalidOperationException($"Attempted to send to {addr} but connected peer is {_peer}.");
 
         byte[] payload = new byte[message.SerdeSize()];
         message.Serialize(payload);
@@ -150,7 +154,7 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
             fixed (byte* pData = payload)
             {
                 var res = SteamNetworkingSockets.SendMessageToConnection(
-                    conn,
+                    _conn,
                     (IntPtr)pData,
                     (uint)payload.Length,
                     Constants.k_nSteamNetworkingSend_UnreliableNoNagle,
@@ -190,7 +194,7 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
                     Message decoded = default;
                     decoded.Deserialize(data);
 
-                    // 1v1: only one peer connection
+                    // 1v1: one peer
                     received.Add((_peer, decoded));
                 }
                 finally
@@ -213,6 +217,9 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     private CSteamID _currentLobby;
     private CSteamID _peer;
+    private CSteamID _host;
+
+    private bool _iAmHost;
 
     private readonly Dictionary<CSteamID, int> _handles = new();
 
@@ -244,31 +251,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         _connStatusCb = Callback<SteamNetConnectionStatusChangedCallback_t>.Create(OnNetConnectionStatusChanged);
 
         _lobbyCreatedCallResult = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
-    }
-
-    // should not be called in awake (could happen before SteamAPI.Init() is called)
-    private void ConfigureP2P()
-    {
-        try
-        {
-            SteamNetworkingUtils.SetConfigValue(
-                ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_P2P_Transport_ICE_Enable,
-                ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global,
-                IntPtr.Zero,
-                ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32,
-                new IntPtr(1));
-
-            SteamNetworkingUtils.SetConfigValue(
-                ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_P2P_Transport_SDR_Penalty,
-                ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global,
-                IntPtr.Zero,
-                ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32,
-                new IntPtr(0));
-        }
-        catch
-        {
-            // Binding differences across Steamworks.NET versions; ignore if unavailable.
-        }
     }
 
     private void OnLobbyCreated(LobbyCreated_t data, bool ioFailure)
@@ -331,15 +313,18 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         {
             _startSentByHost = true;
 
+            _host = SteamMatchmaking.GetLobbyOwner(_currentLobby);
+            _iAmHost = (_host == Me);
+
             // Compute handles deterministically on all clients (host+joiners).
             ComputeHandlesDeterministic();
-
-            // Optionally verify against host-published lobby data (if present).
             TryVerifyHandlesFromLobbyData();
 
             RefreshPeerFromLobby();
-            if (_peer.IsValid())
-                EnsureConnectionTo(_peer);
+
+            // Peer connects to host. Host does NOT connect.
+            if (!_iAmHost && _host.IsValid())
+                EnsureClientConnectionToHost(_host);
         }
     }
 
@@ -380,7 +365,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         int count = SteamMatchmaking.GetNumLobbyMembers(_currentLobby);
         if (count <= 0) return;
 
-        // Cap to maxMembers, but do not silently remap weird states.
         int n = Math.Min(count, Math.Max(1, _maxMembers));
 
         var owner = SteamMatchmaking.GetLobbyOwner(_currentLobby);
@@ -394,7 +378,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
             others.Add(m);
         }
 
-        // Deterministic tie-break: SteamID ascending.
         others.Sort((a, b) => a.m_SteamID.CompareTo(b.m_SteamID));
 
         _handles[owner] = 0;
@@ -406,10 +389,8 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     private void PublishHandlesToLobby()
     {
-        // host-only; joiners can read/verify
         if (!_currentLobby.IsValid()) return;
 
-        // "steamid:handle,steamid:handle"
         var parts = new List<string>(_handles.Count);
         foreach (var kv in _handles)
             parts.Add($"{kv.Key.m_SteamID}:{kv.Value}");
@@ -419,8 +400,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     private void TryVerifyHandlesFromLobbyData()
     {
-        // Optional sanity check.
-        // If host wrote handles, ensure we match.
         string s = SteamMatchmaking.GetLobbyData(_currentLobby, HANDLES_KEY);
         if (string.IsNullOrEmpty(s)) return;
 
@@ -438,28 +417,33 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
         foreach (var kv in _handles)
         {
             if (!parsed.TryGetValue(kv.Key.m_SteamID, out int h) || h != kv.Value)
-            {
-                // If mismatch, prefer deterministic local mapping; you can throw if you want strictness.
                 return;
-            }
         }
     }
 
-    private HSteamNetConnection EnsureConnectionTo(CSteamID peer)
+    private void EnsureListenSocket()
     {
-        if (!peer.IsValid()) throw new InvalidOperationException("Peer invalid.");
+        if (_listen != HSteamListenSocket.Invalid)
+            return;
+
+        // Host-only listen socket.
+        _listen = SteamNetworkingSockets.CreateListenSocketP2P(0, 0, null);
+        if (_listen == HSteamListenSocket.Invalid)
+            throw new InvalidOperationException("CreateListenSocketP2P returned invalid listen socket handle.");
+    }
+
+    private HSteamNetConnection EnsureClientConnectionToHost(CSteamID host)
+    {
+        if (!host.IsValid()) throw new InvalidOperationException("Host invalid.");
+        if (_iAmHost) throw new InvalidOperationException("Host should not ConnectP2P to itself.");
 
         if (_conn != HSteamNetConnection.Invalid)
             return _conn;
 
-        if (_listen == HSteamListenSocket.Invalid)
-            _listen = SteamNetworkingSockets.CreateListenSocketP2P(0, 0, null);
-
         var id = new SteamNetworkingIdentity();
-        id.SetSteamID(peer);
+        id.SetSteamID(host);
 
         _conn = SteamNetworkingSockets.ConnectP2P(ref id, 0, 0, null);
-
         if (_conn == HSteamNetConnection.Invalid)
             throw new InvalidOperationException("ConnectP2P returned invalid connection handle.");
 
@@ -468,55 +452,69 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     private void OnNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t data)
     {
-        if (_conn == HSteamNetConnection.Invalid)
-            _conn = data.m_hConn;
-
         switch (data.m_info.m_eState)
         {
             case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connecting:
+            {
+                // Host accepts inbound connections (peer initiated ConnectP2P).
+                if (_iAmHost)
                 {
+                    Debug.Log("Accepting inbound P2P connection");
                     SteamNetworkingSockets.AcceptConnection(data.m_hConn);
-                    break;
                 }
+                break;
+            }
 
             case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connected:
+            {
+                // For host, connection handle arrives here (inbound).
+                // For peer, this is the same handle returned by ConnectP2P, but keep it consistent.
+                if (_conn == HSteamNetConnection.Invalid)
+                    _conn = data.m_hConn;
+
+                // Identify remote and set _peer if needed.
+                var remoteId = data.m_info.m_identityRemote;
+                var remoteSteamId = remoteId.GetSteamID();
+                if (remoteSteamId.IsValid())
                 {
-                    if (_startArmed && _startSentByHost)
-                    {
-                        if (!_peer.IsValid())
-                        {
-                            var remoteId = data.m_info.m_identityRemote;
-                            if (remoteId.GetSteamID().IsValid())
-                                _peer = remoteId.GetSteamID();
-                        }
-
-                        // Ensure handles exist even if host didn't publish.
-                        if (_handles.Count == 0)
-                        {
-                            ComputeHandlesDeterministic();
-                            TryVerifyHandlesFromLobbyData();
-                        }
-
-                        // Return a copy to avoid external mutation.
-                        _startGameTcs?.TrySetResult(new Dictionary<CSteamID, int>(_handles));
-                        OnStartGame?.Invoke(_peer);
-                    }
-                    break;
+                    // For host, remote is the peer. For peer, remote is the host.
+                    _peer = remoteSteamId;
                 }
+                else
+                {
+                    // Fallback to lobby-derived peer.
+                    RefreshPeerFromLobby();
+                }
+
+                // Ensure handles exist even if host didn't publish.
+                if (_handles.Count == 0)
+                {
+                    ComputeHandlesDeterministic();
+                    TryVerifyHandlesFromLobbyData();
+                }
+
+                if (_startArmed && _startSentByHost)
+                {
+                    _startGameTcs?.TrySetResult(new Dictionary<CSteamID, int>(_handles));
+                    OnStartGame?.Invoke(_peer);
+                }
+
+                break;
+            }
 
             case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
             case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ClosedByPeer:
+            {
+                if (_conn != HSteamNetConnection.Invalid)
                 {
-                    if (_conn != HSteamNetConnection.Invalid)
-                    {
-                        SteamNetworkingSockets.CloseConnection(_conn, 0, "closed", false);
-                        _conn = HSteamNetConnection.Invalid;
-                    }
-
-                    _startGameTcs?.TrySetException(
-                        new InvalidOperationException($"Connection closed: state={data.m_info.m_eState}, endReason={data.m_info.m_eEndReason}"));
-                    break;
+                    SteamNetworkingSockets.CloseConnection(_conn, 0, "closed", false);
+                    _conn = HSteamNetConnection.Invalid;
                 }
+
+                _startGameTcs?.TrySetException(
+                    new InvalidOperationException($"Connection closed: state={data.m_info.m_eState}, endReason={data.m_info.m_eEndReason}"));
+                break;
+            }
         }
     }
 

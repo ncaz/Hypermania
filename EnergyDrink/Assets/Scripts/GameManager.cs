@@ -98,12 +98,11 @@ public class GameManager : MonoBehaviour
         SessionBuilder<Input, CSteamID> builder = new SessionBuilder<Input, CSteamID>().WithNumPlayers(2).WithFps(64);
         foreach ((CSteamID id, int handle) in handles)
         {
+            Debug.Log($"Adding player with id {id} and handle {handle}");
             builder.AddPlayer(new PlayerType<CSteamID> { Kind = _client.Me == id ? PlayerKind.Local : PlayerKind.Remote, Address = id }, new PlayerHandle(handle));
         }
         _session = builder.StartP2PSession<GameState>(_client);
         _playing = true;
-
-        Debug.Log($"Started Game");
     }
 
     void FixedUpdate()
@@ -147,6 +146,7 @@ public class GameManager : MonoBehaviour
 
         if (_session.CurrentState == SessionState.Running)
         {
+            Debug.Log("running");
             _session.AddLocalInput(new PlayerHandle(_client.MyHandle), new Input(f1Input));
 
             try
