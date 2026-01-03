@@ -7,7 +7,7 @@ using Netcode.Rollback.Network;
 using Steamworks;
 using UnityEngine;
 
-public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSteamID>
+public sealed class SteamMatchmakingClient : INonBlockingSocket<CSteamID>
 {
     // ---------- Public API ----------
     public CSteamID CurrentLobby => _currentLobby;
@@ -36,8 +36,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     public async Task<CSteamID> Create(int maxMembers = 2)
     {
         if (maxMembers <= 0) throw new ArgumentOutOfRangeException(nameof(maxMembers));
-        EnsureNotDisposed();
-
         Debug.Log($"[Matchmaking] Create(maxMembers={maxMembers})");
         await Leave();
 
@@ -66,8 +64,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     public async Task Join(CSteamID lobbyId)
     {
         if (!lobbyId.IsValid()) throw new ArgumentException("Invalid lobby id.", nameof(lobbyId));
-        EnsureNotDisposed();
-
         Debug.Log($"[Matchmaking] Join(lobbyId={lobbyId.m_SteamID})");
         await Leave();
 
@@ -96,8 +92,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     public Task Leave()
     {
-        EnsureNotDisposed();
-
         Debug.Log("[Matchmaking] Leave()");
         CloseConnection();
 
@@ -124,7 +118,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     /// </summary>
     public Task<Dictionary<CSteamID, int>> StartGame()
     {
-        EnsureNotDisposed();
         if (!_currentLobby.IsValid()) throw new InvalidOperationException("Not in a lobby.");
 
         RefreshPeerFromLobby();
@@ -161,7 +154,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     // ---------- INonBlockingSocket<CSteamID> ----------
     public void SendTo(in Message message, CSteamID addr)
     {
-        EnsureNotDisposed();
         if (!addr.IsValid()) throw new ArgumentException("Invalid addr.", nameof(addr));
         if (_conn == HSteamNetConnection.Invalid)
             throw new InvalidOperationException("No active connection.");
@@ -191,7 +183,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
 
     public List<(CSteamID addr, Message message)> ReceiveAllMessages()
     {
-        EnsureNotDisposed();
         var received = new List<(CSteamID addr, Message message)>();
 
         if (_conn == HSteamNetConnection.Invalid)
@@ -238,8 +229,6 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
     // - Add an SDR penalty so relayed routes are only chosen when needed.
     private const int SDR_PENALTY_MS = 1000;
     private const int ICE_ENABLE_ALL = unchecked((int)0x7fffffff);
-
-    private bool _disposed;
 
     private int _maxMembers = 2;
 
@@ -659,25 +648,5 @@ public sealed class SteamMatchmakingClient : IDisposable, INonBlockingSocket<CSt
             SteamNetworkingSockets.CloseListenSocket(_listen);
             _listen = HSteamListenSocket.Invalid;
         }
-    }
-
-    private void EnsureNotDisposed()
-    {
-        if (_disposed) throw new ObjectDisposedException(nameof(SteamMatchmakingClient));
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-
-        Debug.Log("[Matchmaking] Dispose()");
-        CloseConnection();
-
-        _lobbyEnterCb?.Unregister();
-        _lobbyChatUpdateCb?.Unregister();
-        _lobbyChatMsgCb?.Unregister();
-        _joinRequestedCb?.Unregister();
-        _connStatusCb?.Unregister();
     }
 }
