@@ -12,7 +12,7 @@ namespace Game
     {
         [SerializeField] protected GameView _view;
         public abstract void Init(List<(PlayerHandle playerHandle, PlayerKind playerKind, SteamNetworkingIdentity address)> players, P2PClient client);
-        public abstract void Tick(float deltaTime);
+        public abstract void Poll(float deltaTime);
         public abstract void Stop();
     }
 }

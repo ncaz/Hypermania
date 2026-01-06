@@ -32,11 +32,32 @@ namespace Game.Sim
 
         public void Advance((GameInput input, InputStatus status)[] inputs)
         {
-            if (inputs.Length >= 1)
-                Fighters[0].ApplyInputs(inputs[0].input);
-            if (inputs.Length >= 2)
-                Fighters[1].ApplyInputs(inputs[1].input);
             Frame += 1;
+
+            for (int i = 0; i < inputs.Length && i < Fighters.Length; i++)
+            {
+                Fighters[i].ApplyMovementIntent(inputs[i].input);
+            }
+
+            for (int i = 0; i < inputs.Length && i < Fighters.Length; i++)
+            {
+                Fighters[i].UpdatePosition();
+            }
+
+            // UpdateBoxes();
+
+            // AdvanceProjectiles();
+
+            // DetectCollisions();
+
+            // ResolveCollisions();
+
+            // ApplyHitResult();
+
+            for (int i = 0; i < inputs.Length && i < Fighters.Length; i++)
+            {
+                Fighters[i].TickStateMachine();
+            }
         }
 
         [ThreadStatic]

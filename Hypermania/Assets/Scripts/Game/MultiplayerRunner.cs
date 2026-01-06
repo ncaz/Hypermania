@@ -60,7 +60,7 @@ namespace Game
 
         public override void Stop() { OnDisable(); }
 
-        public override void Tick(float deltaTime)
+        public override void Poll(float deltaTime)
         {
             if (!_initialized) { return; }
 

@@ -84,7 +84,7 @@ namespace Netcode.P2P
 
             Debug.Log($"[Matchmaking] StartGame(): lobby={_currentLobby.m_SteamID}");
 
-            PublishHandlesToLobby();
+            PublishPlayersToLobby();
             SendLobbyStartMessage();
 
             Debug.Log("[Matchmaking] Host sent START message.");
@@ -103,7 +103,7 @@ namespace Netcode.P2P
         private Callback<GameLobbyJoinRequested_t> _joinRequestedCb;
         private CallResult<LobbyCreated_t> _lobbyCreatedCallResult;
         private Callback<LobbyDataUpdate_t> _lobbyDataUpdateCb;
-        private bool _waitingForHandles;
+        private bool _waitingForPlayers;
 
 
         private TaskCompletionSource<CSteamID> _lobbyCreatedTcs;
@@ -191,9 +191,9 @@ namespace Netcode.P2P
                 Debug.Log($"[Matchmaking] Received START. host={host.m_SteamID}, me={SteamUser.GetSteamID()}");
 
                 SteamMatchmaking.RequestLobbyData(_currentLobby);
-                var handles = GetHandlesFromLobbyData();
-                if (handles == null) { _waitingForHandles = true; }
-                else { OnStartWithPlayers?.Invoke(handles); }
+                var players = GetPlayersFromLobbyData();
+                if (players == null) { _waitingForPlayers = true; }
+                else { OnStartWithPlayers?.Invoke(players); }
             }
         }
 
@@ -208,10 +208,10 @@ namespace Netcode.P2P
             if (!_currentLobby.IsValid() || data.m_ulSteamIDLobby != _currentLobby.m_SteamID)
                 return;
 
-            if (_waitingForHandles)
+            if (_waitingForPlayers)
             {
-                _waitingForHandles = false;
-                var handles = GetHandlesFromLobbyData();
+                _waitingForPlayers = false;
+                var handles = GetPlayersFromLobbyData();
                 OnStartWithPlayers?.Invoke(handles);
             }
         }
@@ -223,7 +223,7 @@ namespace Netcode.P2P
             SteamMatchmaking.SendLobbyChatMsg(_currentLobby, bytes, bytes.Length);
         }
 
-        private void PublishHandlesToLobby()
+        private void PublishPlayersToLobby()
         {
             if (!_currentLobby.IsValid()) return;
 
@@ -251,7 +251,7 @@ namespace Netcode.P2P
             Debug.Log($"[Matchmaking] Published handles to lobby data");
         }
 
-        private List<CSteamID> GetHandlesFromLobbyData()
+        private List<CSteamID> GetPlayersFromLobbyData()
         {
             if (!_currentLobby.IsValid())
                 throw new InvalidOperationException("Lobby is not valid.");

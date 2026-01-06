@@ -11,12 +11,12 @@ namespace Game
 {
     public class SingleplayerRunner : GameRunner
     {
-        private GameState _curState;
-        private SyncTestSession<GameState, GameInput, SteamNetworkingIdentity> _session;
-        private bool _initialized;
-        private float _time;
+        protected GameState _curState;
+        protected SyncTestSession<GameState, GameInput, SteamNetworkingIdentity> _session;
+        protected bool _initialized;
+        protected float _time;
 
-        void OnEnable()
+        protected void OnEnable()
         {
             _curState = null;
             _session = null;
@@ -24,7 +24,7 @@ namespace Game
             _time = 0;
         }
 
-        void OnDisable()
+        protected void OnDisable()
         {
             _curState = null;
             _session = null;
@@ -38,6 +38,10 @@ namespace Game
             SessionBuilder<GameInput, SteamNetworkingIdentity> builder = new SessionBuilder<GameInput, SteamNetworkingIdentity>().WithNumPlayers(players.Count).WithFps(64);
             foreach ((PlayerHandle playerHandle, PlayerKind playerKind, SteamNetworkingIdentity address) in players)
             {
+                if (playerKind != PlayerKind.Local)
+                {
+                    throw new InvalidOperationException("Cannot have remote/spectators in a local session");
+                }
                 builder.AddPlayer(new PlayerType<SteamNetworkingIdentity> { Kind = playerKind, Address = address }, playerHandle);
             }
             _session = builder.StartSynctestSession<GameState>();
@@ -46,7 +50,7 @@ namespace Game
 
         public override void Stop() { OnDisable(); }
 
-        public override void Tick(float deltaTime)
+        public override void Poll(float deltaTime)
         {
             if (!_initialized) { return; }
 
@@ -60,7 +64,7 @@ namespace Game
             }
         }
 
-        void GameLoop()
+        protected void GameLoop()
         {
             if (_session == null) { return; }
             InputFlags f1Input = InputFlags.None;

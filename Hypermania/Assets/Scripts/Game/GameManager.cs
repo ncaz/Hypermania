@@ -11,7 +11,7 @@ namespace Game
 {
     public class GameManager : MonoBehaviour
     {
-        [SerializeField] private GameRunner _runner;
+        public GameRunner Runner;
         private SteamMatchmakingClient _matchmakingClient;
         private P2PClient _p2pClient;
         private List<(PlayerHandle handle, PlayerKind playerKind, SteamNetworkingIdentity netId)> _players;
@@ -26,7 +26,7 @@ namespace Game
             _p2pClient = null;
             _players = new List<(PlayerHandle handle, PlayerKind playerKind, SteamNetworkingIdentity netId)>();
 
-            if (_runner == null) { Debug.LogError($"{nameof(GameManager)}: {_runner} reference is not assigned.", this); }
+            if (Runner == null) { Debug.LogError($"{nameof(GameManager)}: {Runner} reference is not assigned.", this); }
         }
 
         void OnDisable()
@@ -36,7 +36,7 @@ namespace Game
             _players = null;
         }
 
-        #region Matchmaking API
+        #region Controls
 
         public void CreateLobby() => StartCoroutine(CreateLobbyRoutine());
         IEnumerator CreateLobbyRoutine()
@@ -89,6 +89,23 @@ namespace Game
                 yield break;
             }
         }
+
+        public void StartLocalGame()
+        {
+            if (_matchmakingClient.CurrentLobby.IsValid())
+            {
+                throw new InvalidOperationException("cannot start local game while in valid lobby, leave the lobby first!");
+            }
+            _players.Clear();
+            _players.Add((new PlayerHandle(0), PlayerKind.Local, default));
+            OnAllPeersConnected();
+        }
+
+        public void StopGame()
+        {
+            Runner.Stop();
+        }
+
         #endregion
 
         void OnStartWithPlayers(List<CSteamID> players)
@@ -125,17 +142,17 @@ namespace Game
             {
                 throw new InvalidOperationException("players should be initialized if peers are connected");
             }
-            _runner.Init(_players, _p2pClient);
+            Runner.Init(_players, _p2pClient);
         }
 
         void OnPeerDisconnected(SteamNetworkingIdentity id)
         {
-            _runner.Stop();
+            Runner.Stop();
         }
 
         void Update()
         {
-            _runner.Tick(Time.deltaTime);
+            Runner.Poll(Time.deltaTime);
         }
     }
 }
