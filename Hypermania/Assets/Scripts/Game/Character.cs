@@ -8,8 +8,20 @@ namespace Game
         Walk,
         Jump,
         Idle,
+        Knockdown,
         LightAttack,
         LightAerial,
+        LightCrouching,
+        MediumAttack,
+        MediumAerial,
+        MediumCrouching,
+        SuperAttack,
+        SuperAerial,
+        SuperCrouching,
+        SpecialAttack,
+        SpecialAerial,
+        SpecialCrouching,
+        Ultimate,
     }
 
     [Serializable]

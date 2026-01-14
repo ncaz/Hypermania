@@ -119,14 +119,19 @@ namespace Game.Sim
             Channels[channel].Notes.PushBack(note);
         }
 
-        public void Tick(Frame frame, GameInput input, List<ManiaEvent> outEvents)
+        /// <summary>
+        /// Returns false if the mania sequence is over, and true otherwise
+        /// </summary>
+        public bool Tick(Frame frame, GameInput input, List<ManiaEvent> outEvents)
         {
+            bool hasNote = false;
             for (int i = 0; i < Channels.Length; i++)
             {
                 if (Channels[i].Notes.Count == 0)
                 {
                     continue;
                 }
+                hasNote = true;
                 ManiaNote note = Channels[i].Notes.Front();
                 Frame noteTick = note.Tick;
                 bool hasInput = input.Flags.HasFlag(_channelInput[i]);
@@ -161,6 +166,7 @@ namespace Game.Sim
                     Channels[i].Notes.PopFront();
                 }
             }
+            return hasNote;
         }
     }
 }

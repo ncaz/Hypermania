@@ -72,7 +72,7 @@ namespace Game.Runners
             }
 
             _session.AddLocalInput(new PlayerHandle(0), _inputBuffer.Consume());
-            _session.AddLocalInput(new PlayerHandle(1), new GameInput(InputFlags.LightAttack));
+            _session.AddLocalInput(new PlayerHandle(1), new GameInput(InputFlags.None));
             List<RollbackRequest<GameState, GameInput>> requests = _session.AdvanceFrame();
             foreach (RollbackRequest<GameState, GameInput> request in requests)
             {

@@ -1,3 +1,4 @@
+using System;
 using Design;
 using Design.Animation;
 using MemoryPack;
@@ -153,6 +154,21 @@ namespace Game.Sim
                         break;
                 }
             }
+            else if (input.Flags.HasFlag(InputFlags.SuperAttack))
+            {
+                switch (Location(config))
+                {
+                    case FighterLocation.Grounded:
+                        {
+                            Velocity = SVector2.zero;
+                            Mode = FighterMode.Attacking;
+                            ModeT = characterConfig.SuperAttack.TotalTicks;
+                            AnimState = CharacterAnimation.SuperAttack;
+                            AnimSt = frame;
+                        }
+                        break;
+                }
+            }
         }
 
         public void TickStateMachine(Frame frame, GlobalConfig config)
@@ -247,7 +263,9 @@ namespace Game.Sim
         {
             if (Mode == FighterMode.Hitstun)
             {
-                return;
+                throw new InvalidOperationException(
+                    "Should not be possible to apply hit to a character in hitstun: the animation has no hurtboxes"
+                );
             }
             Mode = FighterMode.Hitstun;
             // We add + 1 here: ApplyHit is called after applying inputs but before ticking the state machine. If

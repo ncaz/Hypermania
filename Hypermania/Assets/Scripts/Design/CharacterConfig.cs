@@ -16,10 +16,22 @@ namespace Design
         public float JumpVelocity;
         public HitboxData Walk;
         public HitboxData Idle;
-        public HitboxData LightAerial;
-        public HitboxData LightAttack;
-        public HitboxData Jump;
         public HitboxData Hit;
+        public HitboxData Knockdown;
+        public HitboxData Jump;
+        public HitboxData LightAerial;
+        public HitboxData LightCrouching;
+        public HitboxData LightAttack;
+        public HitboxData MediumAerial;
+        public HitboxData MediumCrouching;
+        public HitboxData MediumAttack;
+        public HitboxData SuperAerial;
+        public HitboxData SuperCrouching;
+        public HitboxData SuperAttack;
+        public HitboxData SpecialAerial;
+        public HitboxData SpecialCrouching;
+        public HitboxData SpecialAttack;
+        public HitboxData Ultimate;
 
         // TODO: many more
 
@@ -47,12 +59,14 @@ namespace Design
                     return Idle;
                 case CharacterAnimation.Jump:
                     return Jump;
+                case CharacterAnimation.Hit:
+                    return Hit;
                 case CharacterAnimation.LightAttack:
                     return LightAttack;
                 case CharacterAnimation.LightAerial:
                     return LightAerial;
-                case CharacterAnimation.Hit:
-                    return Hit;
+                case CharacterAnimation.SuperAttack:
+                    return SuperAttack;
                 default:
                     throw new InvalidOperationException(
                         $"Tried to get hitbox data for {anim} (not registered). Did you add a new type of animation and forget to add it to CharacterConfig.GetHitboxData()?"

@@ -9,8 +9,13 @@ namespace Utils
     [MemoryPackable]
     public sealed partial class Deque<T>
     {
+        [MemoryPackInclude]
         private T[] _buffer;
+
+        [MemoryPackInclude]
         private int _head;
+
+        [MemoryPackInclude]
         private int _count;
 
         public int Count => _count;

@@ -19,7 +19,19 @@ MonoBehaviour:
   JumpVelocity: 9
   Walk: {fileID: 11400000, guid: dfc1fcb3369533c0da952423a0eaa28e, type: 2}
   Idle: {fileID: 11400000, guid: 40155cbf1b231ec2fafbe00f1855687a, type: 2}
-  LightAerial: {fileID: 11400000, guid: d19841dd87230c0a584d7bdce82e8d36, type: 2}
-  LightAttack: {fileID: 11400000, guid: 787cafdd32ba2e2c0aede4960482c675, type: 2}
-  Jump: {fileID: 11400000, guid: a2ab8fe85230ecdad99001634277de2a, type: 2}
   Hit: {fileID: 11400000, guid: f6a168494d73f2e03a2cfaba3f22e9b2, type: 2}
+  Knockdown: {fileID: 0}
+  Jump: {fileID: 11400000, guid: a2ab8fe85230ecdad99001634277de2a, type: 2}
+  LightAerial: {fileID: 11400000, guid: d19841dd87230c0a584d7bdce82e8d36, type: 2}
+  LightCrouching: {fileID: 0}
+  LightAttack: {fileID: 11400000, guid: 787cafdd32ba2e2c0aede4960482c675, type: 2}
+  MediumAerial: {fileID: 0}
+  MediumCrouching: {fileID: 0}
+  MediumAttack: {fileID: 0}
+  SuperAerial: {fileID: 0}
+  SuperCrouching: {fileID: 0}
+  SuperAttack: {fileID: 11400000, guid: b66cf13666efde55fb326dd2c3f318c9, type: 2}
+  SpecialAerial: {fileID: 0}
+  SpecialCrouching: {fileID: 0}
+  SpecialAttack: {fileID: 0}
+  Ultimate: {fileID: 0}

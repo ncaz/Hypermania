@@ -23,6 +23,8 @@ namespace Game
                 input |= InputFlags.LightAttack;
             if (Keyboard.current.kKey.isPressed)
                 input |= InputFlags.MediumAttack;
+            if (Keyboard.current.lKey.isPressed)
+                input |= InputFlags.SuperAttack;
 
             if (Keyboard.current.sKey.isPressed)
                 input |= InputFlags.Mania5;
