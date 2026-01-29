@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Utils.SoftFloat;
 
 namespace Design.Animation
 {
@@ -20,7 +21,7 @@ namespace Design.Animation
         public int HitstunTicks;
         public int BlockstunTicks;
         public bool StartsRhythmCombo;
-        public Vector2 Knockback;
+        public SVector2 Knockback;
 
         // NOTE: ensure that any new fields added above are added to the equals implementation: otherwise they will not
         // be editable in the move builder

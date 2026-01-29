@@ -1,6 +1,7 @@
 using Game;
 using UnityEditor;
 using UnityEngine;
+using Utils.SoftFloat;
 
 namespace Design.Animation.Editors
 {
@@ -148,7 +149,7 @@ namespace Design.Animation.Editors
                 p.Damage = EditorGUILayout.IntField("Damage", p.Damage);
                 p.HitstunTicks = EditorGUILayout.IntField("Hitstun (ticks)", p.HitstunTicks);
                 p.BlockstunTicks = EditorGUILayout.IntField("Blockstun (ticks)", p.BlockstunTicks);
-                p.Knockback = EditorGUILayout.Vector2Field("Knockback", p.Knockback);
+                p.Knockback = SFloatFields.SVector2Field("Knockback", p.Knockback);
                 p.StartsRhythmCombo = EditorGUILayout.Toggle("Starts rhythm combo", p.StartsRhythmCombo);
             }
             box.Props = p;
