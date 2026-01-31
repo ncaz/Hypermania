@@ -19,18 +19,6 @@ namespace Game.Sim
         Starting,
     }
 
-    /// <summary>
-    /// Each gamestate stores a list of view events: these are the events that change something about the view triggered
-    /// by events on this frame. These events will be forwarded to the GameView only when the GameState's frame is
-    /// confirmed
-    /// </summary>
-    public struct ViewEvent { }
-
-    public enum ViewEventKind
-    {
-        CameraShake,
-    }
-
     [MemoryPackable]
     public partial class GameState : IState<GameState>
     {
@@ -56,8 +44,6 @@ namespace Game.Sim
         public FighterState[] Fighters;
         public ManiaState[] Manias;
         public GameMode GameMode;
-
-        public List<ViewEvent> viewEvents;
 
         /// <summary>
         /// Use this static builder instead of the constructor for creating new GameStates. This is because MemoryPack,
