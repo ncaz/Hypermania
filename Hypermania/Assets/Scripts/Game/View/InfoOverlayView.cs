@@ -5,35 +5,47 @@ namespace Game.View
 {
     public class InfoOverlayView : MonoBehaviour
     {
-        private float _lastRenderTs = float.NaN;
-        private float _accum = 0;
-        private int _ticks = 0;
-        private int _fps = 0;
+        public struct PerSecondCounter
+        {
+            private float LastCallTs;
+            private float Accum;
+            private int Ticks;
+            public int Tps { get; private set; }
+
+            public void Call()
+            {
+                float now = Time.realtimeSinceStartup;
+
+                Ticks++;
+                Accum += now - LastCallTs;
+                if (Accum >= 1f)
+                {
+                    Tps = Mathf.RoundToInt(Ticks / Accum);
+                    Accum = 0f;
+                    Ticks = 0;
+                }
+
+                LastCallTs = now;
+            }
+        }
+
+        private PerSecondCounter _fps;
+        private PerSecondCounter _tps;
 
         public void Render(InfoOverlayDetails details)
         {
-            float now = Time.realtimeSinceStartup;
-
-            _ticks++;
-            if (!double.IsNaN(_lastRenderTs))
-            {
-                _accum += now - _lastRenderTs;
-                if (_accum >= 1f)
-                {
-                    _fps = Mathf.RoundToInt(_ticks / _accum);
-                    _accum = 0f;
-                    _ticks = 0;
-                }
-            }
-
-            _lastRenderTs = now;
-
-            string detailsString = "FPS: " + _fps;
+            _tps.Call();
+            string detailsString = "FPS: " + _fps.Tps + "  TPS: " + _tps.Tps;
             if (details.HasPing)
             {
                 detailsString += "  Ping: " + details.Ping + "ms";
             }
             GetComponent<TMP_Text>().SetText(detailsString);
+        }
+
+        public void Update()
+        {
+            _fps.Call();
         }
     }
 

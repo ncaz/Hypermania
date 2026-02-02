@@ -129,6 +129,16 @@ namespace Game.Sim
             EndFrame = endFrame;
         }
 
+        public void End()
+        {
+            EndFrame = Frame.NullFrame;
+            for (int i = 0; i < Channels.Length; i++)
+            {
+                Channels[i].Notes.Clear();
+            }
+            TotalNoteCount = 0;
+        }
+
         public void QueueNote(int channel, ManiaNote note)
         {
             note.Id = TotalNoteCount++;
@@ -182,7 +192,7 @@ namespace Game.Sim
             if (frame == EndFrame)
             {
                 outEvents.Add(ManiaEvent.EndEvent());
-                EndFrame = Frame.NullFrame;
+                End();
             }
         }
     }

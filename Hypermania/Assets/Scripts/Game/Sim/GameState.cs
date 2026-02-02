@@ -148,7 +148,18 @@ namespace Game.Sim
             {
                 if (Fighters[i].Health <= 0)
                 {
+                    Fighters[i].Lives--;
+                    if (Fighters[i].Lives <= 0)
+                    {
+                        return;
+                    }
+
                     GameMode = GameMode.Starting;
+                    // Ensure that if the player died to a mania attack it ends immediately
+                    for (int j = 0; j < Manias.Length; j++)
+                    {
+                        Manias[j].End();
+                    }
                     return;
                 }
             }
@@ -295,6 +306,7 @@ namespace Game.Sim
                         }
                         Manias[owners.Item1].Enable(stFrame + Mathsf.RoundToInt(ticksPerBeat / 2 * 16));
                         GameMode = GameMode.Mania;
+                        // TODO: show mania screen only after the maximum rollback frames to ensure no visual artifacting
                     }
                 }
             }
